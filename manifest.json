@@ -1,6 +1,6 @@
 {
-  "name": "XINEPS4 Relay",
-  "short_name": "XINEPS4",
+  "name": "MICROJOY PS4 TRIAL VER",
+  "short_name": "MICROJOY PS4",
   "description": "Hardware bridge for DualShock controllers",
   "start_url": ".",
   "display": "standalone",
