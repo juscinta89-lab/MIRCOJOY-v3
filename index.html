@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>MICROJOY PS4 Relay v1.0.4</title>
+    <title>MICROJOY PS4 Relay v1.0.4 (TRIAL)</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#050505">
@@ -15,7 +15,7 @@
             --panel-bg: #0d0d0d;
             --theme-red: #ff1a1a;
             --theme-red-dim: #4d0000;
-            --danger: #ffaa00; /* Ditukar ke jingga/kuning untuk kontras dengan merah */
+            --danger: #ffaa00;
             --text-main: #e0e0e0;
         }
 
@@ -36,9 +36,37 @@
             border-bottom: 1px solid var(--theme-red-dim);
             display: flex; flex-direction: column; justify-content: center; align-items: center;
             z-index: 100;
+            position: relative;
         }
         .brand-line { font-weight: bold; color: var(--theme-red); letter-spacing: 2px; font-size: 1.2rem; }
         .ver-tag { color: #888; font-size: 0.75rem; margin-top: 4px; letter-spacing: 1px; }
+
+        /* --- TRIAL TIMER BADGE --- */
+        .trial-badge {
+            position: absolute; right: 15px; top: 50%; transform: translateY(-50%);
+            background: var(--theme-red); color: white;
+            padding: 4px 8px; border-radius: 4px;
+            font-size: 0.8rem; font-weight: bold;
+            box-shadow: 0 0 10px rgba(255, 26, 26, 0.5);
+        }
+
+        /* --- LOCK OVERLAY --- */
+        .lock-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 5, 5, 0.95); backdrop-filter: blur(5px);
+            z-index: 9999; display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            text-align: center; padding: 20px;
+        }
+        .lock-overlay h1 { color: var(--theme-red); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; }
+        .lock-overlay p { color: #aaa; margin-bottom: 30px; line-height: 1.5; max-width: 400px; }
+        .btn-buy {
+            background: var(--theme-red); color: white; border: none;
+            padding: 15px 30px; font-size: 1.1rem; font-weight: bold;
+            border-radius: 8px; cursor: pointer; text-transform: uppercase;
+            box-shadow: 0 0 20px rgba(255, 26, 26, 0.4);
+        }
+        .hidden { display: none !important; }
 
         /* --- MAIN DASHBOARD --- */
         .dashboard {
@@ -97,9 +125,16 @@
 </head>
 <body>
 
+    <div id="trialOverlay" class="lock-overlay hidden">
+        <h1>Masa Percubaan Tamat</h1>
+        <p>Anda telah menggunakan aplikasi ini selama 15 minit. Sila dapatkan versi penuh untuk penggunaan tanpa had dan ciri eksklusif.</p>
+        <button class="btn-buy" onclick="window.location.href='https://link-ke-kedai-anda.com'">Dapatkan Versi Penuh</button>
+    </div>
+
     <div class="header">
         <div class="brand-line">MICROJOY PS4 BY ALIMIN</div>
         <div class="ver-tag">v1.0.0</div>
+        <div class="trial-badge" id="timerDisplay">15:00</div>
     </div>
 
     <div class="dashboard">
@@ -138,10 +173,45 @@
     </div>
 
     <script>
-        // --- PWA REGISTRATION ---
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+        // --- TRIAL SYSTEM LOGIC ---
+        const TRIAL_DURATION_MS = 15 * 60 * 1000; // 15 minit dalam milisaat
+        let trialLocked = false;
+        
+        // Dapatkan masa mula dari storage atau set jika belum ada
+        let startTime = localStorage.getItem('microjoy_trial_start');
+        if (!startTime) {
+            startTime = Date.now();
+            localStorage.setItem('microjoy_trial_start', startTime);
         }
+
+        function checkTrial() {
+            if (trialLocked) return false;
+
+            const elapsedTime = Date.now() - parseInt(startTime);
+            const remainingTime = Math.max(0, TRIAL_DURATION_MS - elapsedTime);
+
+            // Format minit & saat
+            const mins = Math.floor(remainingTime / 60000);
+            const secs = Math.floor((remainingTime % 60000) / 1000);
+            document.getElementById('timerDisplay').innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+            // Jika masa tamat
+            if (remainingTime <= 0) {
+                trialLocked = true;
+                document.getElementById('trialOverlay').classList.remove('hidden');
+                
+                // Putuskan sambungan BLE jika sedang bersambung
+                if (bleDevice?.gatt.connected) {
+                    bleDevice.gatt.disconnect();
+                }
+                return false;
+            }
+            return true;
+        }
+
+        // Semak setiap saat
+        setInterval(checkTrial, 1000);
+
 
         // --- BLE CORE (MICRO:BIT PROTOCOL) ---
         const UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -155,6 +225,7 @@
         const connBtn = document.getElementById('btnConnect');
 
         connBtn.addEventListener('click', async () => {
+            if (trialLocked) return; // Sekat butang jika trial tamat
             if (bleDevice?.gatt.connected) { bleDevice.gatt.disconnect(); return; }
             try {
                 bleDevice = await navigator.bluetooth.requestDevice({
@@ -178,6 +249,7 @@
         });
 
         async function send(s) {
+            if (trialLocked) return; // Sekat penghantaran data jika trial tamat
             telEl.innerText = `${s.replace('\n','')}`;
             if (!rxChar) return;
             try { await rxChar.writeValue(new TextEncoder().encode(s)); } catch (e) {}
@@ -185,6 +257,7 @@
 
         const fFormat = (v) => (v>=0?'+':'-') + Math.abs(v).toString().padStart(2,'0');
         function forceKineticUpdate() {
+            if (trialLocked) return; // Henti hantar data statik
             if (cX !== lX || cY !== lY) {
                 send(`X${fFormat(cX)},Y${fFormat(cY)}\n`);
                 lX = cX; lY = cY;
@@ -206,12 +279,10 @@
 
         let gpState = { cross: false, circle: false, square: false, triangle: false };
         const GP_DEADZONE = 0.15;
-        
-        // Pembolehubah Kalibrasi
-        let offsetX = 0;
-        let offsetY = 0;
+        let offsetX = 0, offsetY = 0;
 
         btnCalibrate.addEventListener('click', () => {
+            if (trialLocked) return;
             const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
             const gp = gamepads[0];
             if (gp) {
@@ -224,7 +295,7 @@
         });
 
         window.addEventListener("gamepadconnected", (e) => {
-            dsStatusEl.innerText = "DS4 ACQUIRED"; dsCard.classList.add('active');
+            if (!trialLocked) { dsStatusEl.innerText = "DS4 ACQUIRED"; dsCard.classList.add('active'); }
         });
 
         window.addEventListener("gamepaddisconnected", (e) => {
@@ -232,23 +303,19 @@
             outPsX.innerText = "0.00"; outPsY.innerText = "0.00"; outPsDpad.innerText = "IDLE";
             outPsCross.innerText = "OFF"; outPsCircle.innerText = "OFF";
             outPsSquare.innerText = "OFF"; outPsTriangle.innerText = "OFF";
-            cX = 0; cY = 0; 
-            offsetX = 0; offsetY = 0; // Reset kalibrasi bila terputus
+            cX = 0; cY = 0; offsetX = 0; offsetY = 0; 
             forceKineticUpdate();
         });
 
         function pollGamepad() {
+            if (trialLocked) return; // Berhenti memproses input jika masa tamat
+
             const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
             const gp = gamepads[0]; 
             
             if (gp) {
-                // Tolak nilai paksi dengan nilai kalibrasi (offset)
-                let ax = gp.axes[0] - offsetX; 
-                let ay = gp.axes[1] - offsetY; 
-                
-                // Pastikan nilai tidak melebihi julat -1 hingga 1
-                ax = Math.max(-1, Math.min(1, ax));
-                ay = Math.max(-1, Math.min(1, ay));
+                let ax = Math.max(-1, Math.min(1, gp.axes[0] - offsetX)); 
+                let ay = Math.max(-1, Math.min(1, gp.axes[1] - offsetY)); 
                 
                 outPsX.innerText = ax.toFixed(2); outPsY.innerText = ay.toFixed(2);
 
@@ -294,9 +361,12 @@
             }
             requestAnimationFrame(pollGamepad);
         }
-        pollGamepad(); 
-
-        setInterval(forceKineticUpdate, 50); 
+        
+        // Mulakan semakan pada awal load
+        if (checkTrial()) {
+            pollGamepad(); 
+            setInterval(forceKineticUpdate, 50); 
+        }
     </script>
 </body>
 </html>
