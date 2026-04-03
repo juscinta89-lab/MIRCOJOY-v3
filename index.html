@@ -17,6 +17,7 @@
             --theme-red-dim: #4d0000;
             --danger: #ffaa00;
             --text-main: #e0e0e0;
+            --locked-color: #444444;
         }
 
         * { box-sizing: border-box; font-family: 'Courier New', Courier, monospace; user-select: none; -webkit-user-select: none; }
@@ -48,6 +49,10 @@
             padding: 4px 8px; border-radius: 4px;
             font-size: 0.8rem; font-weight: bold;
             box-shadow: 0 0 10px rgba(255, 26, 26, 0.5);
+        }
+        .device-id {
+            position: absolute; left: 15px; top: 50%; transform: translateY(-50%);
+            color: #555; font-size: 0.6rem;
         }
 
         /* --- LOCK OVERLAY --- */
@@ -86,6 +91,7 @@
         .tel-header { color: #666; font-size: 0.7rem; border-bottom: 1px solid #222; padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
         .tel-row { display: flex; justify-content: space-between; font-size: 0.95rem; margin-bottom: 6px; font-weight: bold; color: #aaa; }
         .tel-value { color: var(--theme-red); }
+        .tel-locked { color: var(--locked-color); font-style: italic; }
         .tel-tx-row { border-top: 1px dashed #333; padding-top: 10px; margin-top: 5px; font-size: 1.1rem; color: #fff; }
         .tel-tx-val { color: #00ffcc; text-shadow: 0 0 10px rgba(0,255,204,0.3); }
 
@@ -127,27 +133,29 @@
 
     <div id="trialOverlay" class="lock-overlay hidden">
         <h1>Masa Percubaan Tamat</h1>
-        <p>Anda telah menggunakan aplikasi ini selama 15 minit. Sila dapatkan versi penuh untuk penggunaan tanpa had dan ciri eksklusif.</p>
-        <button class="btn-buy" onclick="window.location.href='https://link-ke-kedai-anda.com'">Dapatkan Versi Penuh</button>
+        <p>Anda telah menggunakan aplikasi ini selama 15 minit. Sila dapatkan versi penuh untuk membuka kunci semua butang dan bermain tanpa had.</p>
+        <button class="btn-buy" onclick="window.location.href='https://link-ke-kedai-anda.com'">Beli Versi Penuh</button>
+        <p style="font-size: 0.7rem; margin-top: 20px; color: #444;" id="overlayDeviceId"></p>
     </div>
 
     <div class="header">
+        <div class="device-id" id="navDeviceId">ID: ---</div>
         <div class="brand-line">MICROJOY PS4 BY ALIMIN</div>
-        <div class="ver-tag">v1.0.0</div>
+        <div class="ver-tag">v1.0.0 (TRIAL)</div>
         <div class="trial-badge" id="timerDisplay">15:00</div>
     </div>
 
     <div class="dashboard">
         
         <div class="telemetry-panel">
-            <div class="tel-header">DualShock Raw Input</div>
+            <div class="tel-header">DualShock Raw Input (TRIAL MODE)</div>
             <div class="tel-row"><span>AXIS-X:</span><span class="tel-value" id="psX">0.00</span></div>
             <div class="tel-row"><span>AXIS-Y:</span><span class="tel-value" id="psY">0.00</span></div>
             <div class="tel-row"><span>D-PAD:</span><span class="tel-value" id="psDpad">IDLE</span></div>
-            <div class="tel-row"><span>[✕] CROSS (A):</span><span class="tel-value" id="psCross">OFF</span></div>
-            <div class="tel-row"><span>[◯] CIRCLE (B):</span><span class="tel-value" id="psCircle">OFF</span></div>
-            <div class="tel-row"><span>[□] SQUARE (C):</span><span class="tel-value" id="psSquare">OFF</span></div>
-            <div class="tel-row"><span>[△] TRIANGLE (D):</span><span class="tel-value" id="psTriangle">OFF</span></div>
+            <div class="tel-row"><span>[✕] CROSS:</span><span class="tel-locked">LOCKED</span></div>
+            <div class="tel-row"><span>[◯] CIRCLE:</span><span class="tel-locked">LOCKED</span></div>
+            <div class="tel-row"><span>[□] SQUARE:</span><span class="tel-locked">LOCKED</span></div>
+            <div class="tel-row"><span>[△] TRIANGLE:</span><span class="tel-locked">LOCKED</span></div>
 
             <div class="tel-header" style="margin-top: 15px;">Micro:bit Payload</div>
             <div class="tel-row tel-tx-row">
@@ -173,15 +181,30 @@
     </div>
 
     <script>
-        // --- TRIAL SYSTEM LOGIC ---
-        const TRIAL_DURATION_MS = 15 * 60 * 1000; // 15 minit dalam milisaat
+        // --- DEVICE FINGERPRINTING & TRIAL SYSTEM LOGIC ---
+        function generateUUID() {
+            return 'xxxx-xxxx-4xxx-yxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Semak atau cipta Device ID
+        let deviceID = localStorage.getItem('microjoy_device_id');
+        if (!deviceID) {
+            deviceID = generateUUID().toUpperCase();
+            localStorage.setItem('microjoy_device_id', deviceID);
+        }
+        document.getElementById('navDeviceId').innerText = `ID: ${deviceID.substring(0,8)}`;
+        document.getElementById('overlayDeviceId').innerText = `Device ID: ${deviceID}`;
+
+        const TRIAL_DURATION_MS = 15 * 60 * 1000; 
         let trialLocked = false;
         
-        // Dapatkan masa mula dari storage atau set jika belum ada
-        let startTime = localStorage.getItem('microjoy_trial_start');
+        let startTime = localStorage.getItem('microjoy_trial_start_' + deviceID);
         if (!startTime) {
             startTime = Date.now();
-            localStorage.setItem('microjoy_trial_start', startTime);
+            localStorage.setItem('microjoy_trial_start_' + deviceID, startTime);
         }
 
         function checkTrial() {
@@ -190,17 +213,14 @@
             const elapsedTime = Date.now() - parseInt(startTime);
             const remainingTime = Math.max(0, TRIAL_DURATION_MS - elapsedTime);
 
-            // Format minit & saat
             const mins = Math.floor(remainingTime / 60000);
             const secs = Math.floor((remainingTime % 60000) / 1000);
             document.getElementById('timerDisplay').innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
-            // Jika masa tamat
             if (remainingTime <= 0) {
                 trialLocked = true;
                 document.getElementById('trialOverlay').classList.remove('hidden');
                 
-                // Putuskan sambungan BLE jika sedang bersambung
                 if (bleDevice?.gatt.connected) {
                     bleDevice.gatt.disconnect();
                 }
@@ -209,9 +229,7 @@
             return true;
         }
 
-        // Semak setiap saat
         setInterval(checkTrial, 1000);
-
 
         // --- BLE CORE (MICRO:BIT PROTOCOL) ---
         const UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -225,7 +243,7 @@
         const connBtn = document.getElementById('btnConnect');
 
         connBtn.addEventListener('click', async () => {
-            if (trialLocked) return; // Sekat butang jika trial tamat
+            if (trialLocked) return; 
             if (bleDevice?.gatt.connected) { bleDevice.gatt.disconnect(); return; }
             try {
                 bleDevice = await navigator.bluetooth.requestDevice({
@@ -249,7 +267,7 @@
         });
 
         async function send(s) {
-            if (trialLocked) return; // Sekat penghantaran data jika trial tamat
+            if (trialLocked) return; 
             telEl.innerText = `${s.replace('\n','')}`;
             if (!rxChar) return;
             try { await rxChar.writeValue(new TextEncoder().encode(s)); } catch (e) {}
@@ -257,7 +275,7 @@
 
         const fFormat = (v) => (v>=0?'+':'-') + Math.abs(v).toString().padStart(2,'0');
         function forceKineticUpdate() {
-            if (trialLocked) return; // Henti hantar data statik
+            if (trialLocked) return; 
             if (cX !== lX || cY !== lY) {
                 send(`X${fFormat(cX)},Y${fFormat(cY)}\n`);
                 lX = cX; lY = cY;
@@ -272,12 +290,7 @@
         const outPsX = document.getElementById('psX');
         const outPsY = document.getElementById('psY');
         const outPsDpad = document.getElementById('psDpad');
-        const outPsCross = document.getElementById('psCross');
-        const outPsCircle = document.getElementById('psCircle');
-        const outPsSquare = document.getElementById('psSquare');
-        const outPsTriangle = document.getElementById('psTriangle');
 
-        let gpState = { cross: false, circle: false, square: false, triangle: false };
         const GP_DEADZONE = 0.15;
         let offsetX = 0, offsetY = 0;
 
@@ -301,14 +314,12 @@
         window.addEventListener("gamepaddisconnected", (e) => {
             dsStatusEl.innerText = "AWAITING PAIR"; dsCard.classList.remove('active');
             outPsX.innerText = "0.00"; outPsY.innerText = "0.00"; outPsDpad.innerText = "IDLE";
-            outPsCross.innerText = "OFF"; outPsCircle.innerText = "OFF";
-            outPsSquare.innerText = "OFF"; outPsTriangle.innerText = "OFF";
             cX = 0; cY = 0; offsetX = 0; offsetY = 0; 
             forceKineticUpdate();
         });
 
         function pollGamepad() {
-            if (trialLocked) return; // Berhenti memproses input jika masa tamat
+            if (trialLocked) return; 
 
             const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
             const gp = gamepads[0]; 
@@ -335,34 +346,12 @@
                     outPsDpad.innerText = "IDLE"; outPsDpad.style.color = "var(--theme-red)";
                 }
 
-                if (gp.buttons[0] && gp.buttons[0].pressed && !gpState.cross) {
-                    gpState.cross = true; outPsCross.innerText = "ON"; outPsCross.style.color = "#fff"; send("A\n"); 
-                } else if (gp.buttons[0] && !gp.buttons[0].pressed && gpState.cross) {
-                    gpState.cross = false; outPsCross.innerText = "OFF"; outPsCross.style.color = "var(--theme-red)"; send("a\n");
-                }
-
-                if (gp.buttons[1] && gp.buttons[1].pressed && !gpState.circle) {
-                    gpState.circle = true; outPsCircle.innerText = "ON"; outPsCircle.style.color = "#fff"; send("B\n"); 
-                } else if (gp.buttons[1] && !gp.buttons[1].pressed && gpState.circle) {
-                    gpState.circle = false; outPsCircle.innerText = "OFF"; outPsCircle.style.color = "var(--theme-red)"; send("b\n");
-                }
-
-                if (gp.buttons[2] && gp.buttons[2].pressed && !gpState.square) {
-                    gpState.square = true; outPsSquare.innerText = "ON"; outPsSquare.style.color = "#fff"; send("C\n"); 
-                } else if (gp.buttons[2] && !gp.buttons[2].pressed && gpState.square) {
-                    gpState.square = false; outPsSquare.innerText = "OFF"; outPsSquare.style.color = "var(--theme-red)"; send("c\n");
-                }
-
-                if (gp.buttons[3] && gp.buttons[3].pressed && !gpState.triangle) {
-                    gpState.triangle = true; outPsTriangle.innerText = "ON"; outPsTriangle.style.color = "#fff"; send("D\n"); 
-                } else if (gp.buttons[3] && !gp.buttons[3].pressed && gpState.triangle) {
-                    gpState.triangle = false; outPsTriangle.innerText = "OFF"; outPsTriangle.style.color = "var(--theme-red)"; send("d\n");
-                }
+                // NOTA: Kod untuk butang Cross, Circle, Square dan Triangle telah dipadamkan 
+                // sepenuhnya dari bahagian ini untuk versi Trial.
             }
             requestAnimationFrame(pollGamepad);
         }
         
-        // Mulakan semakan pada awal load
         if (checkTrial()) {
             pollGamepad(); 
             setInterval(forceKineticUpdate, 50); 
